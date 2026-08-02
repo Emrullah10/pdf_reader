@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ValidationError } from '@pdf-reader/errors';
 import { translateDomainError } from '@pdf-reader/core-service-identity/src/interfaces/http/translate-domain-error.js';
 
 const registerSchema = z.object({
@@ -18,6 +19,13 @@ const refreshSchema = z.object({
 
 const toPublicUser = (user) => ({ id: user.id, email: user.email, name: user.name, locale: user.locale });
 
+const translateError = (err) => {
+  if (err instanceof z.ZodError) {
+    return new ValidationError('Invalid request body', err.issues);
+  }
+  return translateDomainError(err);
+};
+
 export const makeAuthController = ({ registerUser, loginUser, refreshSession, revokeSession }) => ({
   register: async (req, res, next) => {
     try {
@@ -25,7 +33,7 @@ export const makeAuthController = ({ registerUser, loginUser, refreshSession, re
       const user = await registerUser(input);
       res.status(201).json({ user: toPublicUser(user) });
     } catch (err) {
-      next(translateDomainError(err));
+      next(translateError(err));
     }
   },
 
@@ -39,7 +47,7 @@ export const makeAuthController = ({ registerUser, loginUser, refreshSession, re
       });
       res.status(200).json({ user: toPublicUser(user), accessToken, refreshToken });
     } catch (err) {
-      next(translateDomainError(err));
+      next(translateError(err));
     }
   },
 
@@ -49,7 +57,7 @@ export const makeAuthController = ({ registerUser, loginUser, refreshSession, re
       const { accessToken, user } = await refreshSession(input);
       res.status(200).json({ accessToken, user: toPublicUser(user) });
     } catch (err) {
-      next(translateDomainError(err));
+      next(translateError(err));
     }
   },
 
@@ -59,7 +67,7 @@ export const makeAuthController = ({ registerUser, loginUser, refreshSession, re
       await revokeSession(input);
       res.status(204).send();
     } catch (err) {
-      next(translateDomainError(err));
+      next(translateError(err));
     }
   },
 });

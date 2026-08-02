@@ -29,6 +29,12 @@ describe('auth HTTP API (e2e)', () => {
     expect(res.body.user.passwordHash).toBeUndefined();
   });
 
+  it('rejects registration with an invalid email with 400', async () => {
+    const res = await request(app).post('/api/auth/register').send({ email: 'not-an-email', password: 'abcd1234', name: 'Ada' });
+
+    expect(res.status).toBe(400);
+  });
+
   it('rejects duplicate registration with 409', async () => {
     await request(app).post('/api/auth/register').send({ email: 'a@b.com', password: 'abcd1234', name: 'Ada' });
     const res = await request(app).post('/api/auth/register').send({ email: 'a@b.com', password: 'abcd1234', name: 'Ada2' });
