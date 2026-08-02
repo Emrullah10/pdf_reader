@@ -20,8 +20,9 @@
     "db:build-schema": "node scripts/build-schema.js"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
     "eslint": "^9.9.0",
-    "prettier": "^3.3.3",
-    "jest": "^29.7.0"
+    "jest": "^29.7.0",
+    "prettier": "^3.3.3"
   }
 }
