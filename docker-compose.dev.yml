@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: pdf_reader
       POSTGRES_DB: pdf_reader
     ports:
-      - '5432:5432'
+      - '5435:5432'
     volumes:
       - pdf_reader_pg_data:/var/lib/postgresql/data
 
