@@ -14,9 +14,9 @@
     "lint": "eslint . --ext .js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test:unit": "jest --selectProjects unit",
-    "test:integration": "jest --selectProjects integration",
-    "test": "jest",
+    "test:unit": "node --experimental-vm-modules node_modules/.bin/jest --selectProjects unit",
+    "test:integration": "node --experimental-vm-modules node_modules/.bin/jest --selectProjects integration",
+    "test": "node --experimental-vm-modules node_modules/.bin/jest",
     "db:build-schema": "node scripts/build-schema.js"
   },
   "devDependencies": {
