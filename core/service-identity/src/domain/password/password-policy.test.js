@@ -16,4 +16,12 @@ describe('assertPasswordIsValid', () => {
   it('rejects a password with no letter', () => {
     expect(() => assertPasswordIsValid('12345678')).toThrow('Password must contain at least one letter');
   });
+
+  it('accepts a password containing only Turkish letters plus a digit', () => {
+    expect(() => assertPasswordIsValid('şifreyim1')).not.toThrow();
+  });
+
+  it('accepts a password that is exactly 8 characters, using Turkish letters', () => {
+    expect(() => assertPasswordIsValid('şifre123')).not.toThrow();
+  });
 });

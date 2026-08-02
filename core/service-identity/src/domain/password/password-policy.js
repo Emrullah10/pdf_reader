@@ -5,7 +5,7 @@ export const assertPasswordIsValid = (password) => {
   if (!/\d/.test(password)) {
     throw new Error('Password must contain at least one digit');
   }
-  if (!/[a-zA-Z]/.test(password)) {
+  if (!/\p{L}/u.test(password)) {
     throw new Error('Password must contain at least one letter');
   }
 };
