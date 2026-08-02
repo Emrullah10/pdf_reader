@@ -1,0 +1,1 @@
+-- Enums shared across services. Extended in later phases (document/conversion).
