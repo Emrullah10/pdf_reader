@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { boot } from '../../../../services/pdf-service-document/src/boot.js';
-import { truncateAll, seedUser, makeTestPool } from './config/db-setup.js';
+import { truncateAll, seedUser } from './config/db-setup.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(__dirname, '..', '..', '..', 'fixtures');
@@ -77,7 +77,7 @@ describe('document HTTP API (e2e)', () => {
     const uploadRes = await request(app).post('/api/documents').set('Authorization', authHeader).attach('file', join(fixturesDir, 'sample-text.pdf'));
     const documentId = uploadRes.body.document.id;
 
-    const otherUserId = await seedUser(makeTestPool(), { email: `other-doc-${Date.now()}@test.com` });
+    const otherUserId = await seedUser(pool, { email: `other-doc-${Date.now()}@test.com` });
     const otherToken = jwt.sign({ sub: otherUserId, email: 'other@test.com' }, JWT_SECRET, { expiresIn: '15m' });
 
     const res = await request(app).get(`/api/documents/${documentId}`).set('Authorization', `Bearer ${otherToken}`);
