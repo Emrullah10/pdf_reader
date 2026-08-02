@@ -46,7 +46,10 @@ export const makeDocumentRepository = ({ pool }) => ({
        RETURNING *`,
       [id, status, pageCount ?? null, hasTextLayer ?? null, errorMessage ?? null],
     );
-    return rowToDocument(rows[0]);
+    // Background extraction can finish after the document itself was deleted (the user removed it
+    // mid-processing) — that is a no-op, not an error, so return null instead of throwing on a
+    // missing row.
+    return rows[0] ? rowToDocument(rows[0]) : null;
   },
 
   async deleteById(id) {

@@ -23,6 +23,32 @@ describe('document HTTP API (e2e)', () => {
   let userId;
   let authHeader;
 
+  // Extraction now runs after the upload response is sent, so anything that depends on its
+  // output (page count, search hits) has to wait for the status to leave 'processing' first.
+  const waitForStatus = async (documentId, targetStatus, { timeoutMs = 5000 } = {}) => {
+    const deadline = Date.now() + timeoutMs;
+
+    while (Date.now() < deadline) {
+      const res = await request(app).get(`/api/documents/${documentId}`).set('Authorization', authHeader);
+      if (res.body.document.status === targetStatus) return res.body.document;
+      if (res.body.document.status === 'failed' && targetStatus !== 'failed') {
+        throw new Error(`Document failed while waiting for '${targetStatus}': ${res.body.document.errorMessage}`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+
+    throw new Error(`Timed out waiting for document ${documentId} to reach status '${targetStatus}'`);
+  };
+
+  const uploadAndWait = async (fixtureName) => {
+    const res = await request(app)
+      .post('/api/documents')
+      .set('Authorization', authHeader)
+      .attach('file', join(fixturesDir, fixtureName));
+
+    return waitForStatus(res.body.document.id, 'ready');
+  };
+
   beforeEach(async () => {
     await truncateAll(pool);
     userId = await seedUser(pool);
@@ -42,16 +68,19 @@ describe('document HTTP API (e2e)', () => {
     expect(res.status).toBe(401);
   });
 
-  it('uploads a PDF, extracts text, and returns a ready document', async () => {
+  it('uploads a PDF and returns immediately, then extracts text in the background', async () => {
     const res = await request(app)
       .post('/api/documents')
       .set('Authorization', authHeader)
       .attach('file', join(fixturesDir, 'sample-text.pdf'));
 
     expect(res.status).toBe(201);
-    expect(res.body.document.status).toBe('ready');
-    expect(res.body.document.pageCount).toBe(1);
-    expect(res.body.document.hasTextLayer).toBe(true);
+    // The response must not wait on extraction — that is what keeps a large PDF from timing out.
+    expect(res.body.document.status).toBe('processing');
+
+    const document = await waitForStatus(res.body.document.id, 'ready');
+    expect(document.pageCount).toBe(1);
+    expect(document.hasTextLayer).toBe(true);
   });
 
   it('lists only the uploading user\'s documents', async () => {
@@ -86,7 +115,7 @@ describe('document HTTP API (e2e)', () => {
   });
 
   it('searches for a word that appears in an uploaded document and returns coordinates', async () => {
-    await request(app).post('/api/documents').set('Authorization', authHeader).attach('file', join(fixturesDir, 'sample-text.pdf'));
+    await uploadAndWait('sample-text.pdf');
 
     const res = await request(app)
       .post('/api/documents/search')
@@ -101,7 +130,7 @@ describe('document HTTP API (e2e)', () => {
   });
 
   it('search is case-insensitive', async () => {
-    await request(app).post('/api/documents').set('Authorization', authHeader).attach('file', join(fixturesDir, 'sample-text.pdf'));
+    await uploadAndWait('sample-text.pdf');
 
     const res = await request(app).post('/api/documents/search').set('Authorization', authHeader).send({ query: 'HELLO' });
 
@@ -109,7 +138,7 @@ describe('document HTTP API (e2e)', () => {
   });
 
   it('returns zero matches for a word not present', async () => {
-    await request(app).post('/api/documents').set('Authorization', authHeader).attach('file', join(fixturesDir, 'sample-text.pdf'));
+    await uploadAndWait('sample-text.pdf');
 
     const res = await request(app).post('/api/documents/search').set('Authorization', authHeader).send({ query: 'xyzxyzxyz' });
 

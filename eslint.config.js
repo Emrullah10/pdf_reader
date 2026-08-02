@@ -23,6 +23,8 @@ export default [
         jest: 'readonly',
         fetch: 'readonly',
         setTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearInterval: 'readonly',
       },
     },
     rules: {

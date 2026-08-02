@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { extractPdfText } from './extract-pdf-text.js';
@@ -8,9 +7,7 @@ const fixturesDir = join(__dirname, '..', '..', '..', '..', 'test', 'fixtures');
 
 describe('extractPdfText', () => {
   it('extracts page count, dimensions, and words with bounding boxes from a real PDF', async () => {
-    const buffer = readFileSync(join(fixturesDir, 'sample-text.pdf'));
-
-    const result = await extractPdfText(buffer);
+    const result = await extractPdfText(join(fixturesDir, 'sample-text.pdf'));
 
     expect(result.pageCount).toBe(1);
     expect(result.hasTextLayer).toBe(true);
@@ -35,8 +32,7 @@ describe('extractPdfText', () => {
   });
 
   it('assigns sequential wordIndex values starting at 0 per page', async () => {
-    const buffer = readFileSync(join(fixturesDir, 'sample-text.pdf'));
-    const result = await extractPdfText(buffer);
+    const result = await extractPdfText(join(fixturesDir, 'sample-text.pdf'));
 
     const indices = result.pages[0].words.map((w) => w.wordIndex);
     expect(indices).toEqual([...indices].sort((a, b) => a - b));
@@ -44,8 +40,7 @@ describe('extractPdfText', () => {
   });
 
   it('lays out consecutive words on the same line without gaps or overlaps', async () => {
-    const buffer = readFileSync(join(fixturesDir, 'sample-text.pdf'));
-    const result = await extractPdfText(buffer);
+    const result = await extractPdfText(join(fixturesDir, 'sample-text.pdf'));
 
     const words = result.pages[0].words;
     expect(words.length).toBeGreaterThanOrEqual(2);
@@ -70,7 +65,7 @@ describe('extractPdfText', () => {
     expect(totalSpan).toBeLessThan(sumOfWidths * 1.5);
   });
 
-  it('throws a descriptive error for a non-PDF buffer', async () => {
-    await expect(extractPdfText(Buffer.from('this is not a pdf'))).rejects.toThrow();
+  it('throws a descriptive error for a file that is not a PDF', async () => {
+    await expect(extractPdfText(join(fixturesDir, 'not-a-pdf.txt'))).rejects.toThrow();
   });
 });

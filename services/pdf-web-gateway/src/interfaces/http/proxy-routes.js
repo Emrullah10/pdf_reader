@@ -13,17 +13,24 @@ export const makeProxyRoutes = ({ routeTable, requireAuth, readAuthCookies }) =>
         changeOrigin: true,
         pathFilter: '/**',
         pathRewrite: (path) => `${prefix}${path}`,
+        // Uploads stream through this proxy, and a large PDF's extraction can keep the target
+        // service busy well past the default socket timeout. Without these the connection is
+        // dropped mid-transfer and the client sees a truncated/failed upload.
+        proxyTimeout: 10 * 60 * 1000,
+        timeout: 10 * 60 * 1000,
         on: {
           proxyReq: (proxyReq, req) => {
             const { accessToken } = readAuthCookies(req);
             if (accessToken) {
               proxyReq.setHeader('Authorization', `Bearer ${accessToken}`);
             }
-            // app.use(jsonBody()) is mounted globally (needed for /api/gateway/*), so it
-            // already consumes and parses the request stream before this proxy middleware
-            // runs. Without re-serializing req.body here, any proxied POST/PUT with a JSON
-            // body hangs forever — the target service waits on a body that never arrives.
-            fixRequestBody(proxyReq, req);
+            // jsonBody() is scoped to /api/gateway, so proxied requests normally still have an
+            // unread stream that http-proxy-middleware pipes through untouched — which is what
+            // multipart uploads need. Only re-serialize when something upstream actually parsed
+            // a body; calling fixRequestBody on an unparsed request would truncate the upload.
+            if (req.body && Object.keys(req.body).length > 0) {
+              fixRequestBody(proxyReq, req);
+            }
           },
         },
       }),

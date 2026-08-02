@@ -1,4 +1,5 @@
 import { getDocument, OPS } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { pathToFileURL } from 'node:url';
 
 // pdf.js exposes per-glyph advance widths (in 1/1000 em) only through the operator list, not through
 // getTextContent(). Collect them per drawn string so word boxes can be measured with the font's real
@@ -100,28 +101,52 @@ const groupTextItemsIntoWords = (textContent, pageHeight, glyphWidthIndex) => {
   return words;
 };
 
-export const extractPdfText = async (fileBuffer) => {
-  const loadingTask = getDocument({ data: new Uint8Array(fileBuffer) });
-  const pdf = await loadingTask.promise;
+// Opens by path rather than by buffer: passing `data` forces the whole PDF into memory, which on a
+// small host is what actually kills the process on a large file. In url mode pdf.js reads ranges
+// off disk as it needs them, so peak memory tracks the working set, not the file size.
+const openPdf = (storagePath) => getDocument({ url: pathToFileURL(storagePath) }).promise;
 
-  const pages = [];
+// Streams a document page by page, handing each one to `onPage` and releasing it before moving on.
+// Nothing accumulates across pages here — the caller decides what to keep — so a 200MB scan costs
+// roughly what a 2MB one does. Returns the totals that are only knowable after a full pass.
+export const extractPdfTextByPage = async (storagePath, onPage) => {
+  const pdf = await openPdf(storagePath);
   let anyWords = false;
 
-  for (let pageNo = 1; pageNo <= pdf.numPages; pageNo++) {
-    const page = await pdf.getPage(pageNo);
-    const viewport = page.getViewport({ scale: 1 });
-    const textContent = await page.getTextContent();
-    const operatorList = await page.getOperatorList();
+  try {
+    for (let pageNo = 1; pageNo <= pdf.numPages; pageNo++) {
+      const page = await pdf.getPage(pageNo);
 
-    const words = groupTextItemsIntoWords(
-      textContent,
-      viewport.height,
-      buildGlyphWidthIndex(operatorList),
-    );
-    if (words.length > 0) anyWords = true;
+      try {
+        const viewport = page.getViewport({ scale: 1 });
+        const words = groupTextItemsIntoWords(
+          await page.getTextContent(),
+          viewport.height,
+          buildGlyphWidthIndex(await page.getOperatorList()),
+        );
+        if (words.length > 0) anyWords = true;
 
-    pages.push({ pageNo, width: viewport.width, height: viewport.height, words });
+        await onPage({ pageNo, width: viewport.width, height: viewport.height, words });
+      } finally {
+        // pdf.js caches every page it hands out; without this the document holds all of them
+        // until destroy(), which reintroduces exactly the growth this function exists to avoid.
+        page.cleanup();
+      }
+    }
+
+    return { pageCount: pdf.numPages, hasTextLayer: anyWords };
+  } finally {
+    await pdf.destroy();
   }
+};
 
-  return { pageCount: pdf.numPages, hasTextLayer: anyWords, pages };
+// Collects every page in memory. Fine for small documents and for tests, but callers handling
+// user uploads of unknown size should prefer extractPdfTextByPage.
+export const extractPdfText = async (storagePath) => {
+  const pages = [];
+  const { pageCount, hasTextLayer } = await extractPdfTextByPage(storagePath, (page) => {
+    pages.push(page);
+  });
+
+  return { pageCount, hasTextLayer, pages };
 };
