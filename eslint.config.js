@@ -22,6 +22,7 @@ export default [
         afterAll: 'readonly',
         jest: 'readonly',
         fetch: 'readonly',
+        setTimeout: 'readonly',
       },
     },
     rules: {

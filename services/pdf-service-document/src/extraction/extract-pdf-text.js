@@ -8,7 +8,7 @@ const groupTextItemsIntoWords = (textContent, pageHeight) => {
     const rawPieces = item.str.split(/\s+/).filter((piece) => piece.length > 0);
     if (rawPieces.length === 0) continue;
 
-    const [x, , , , e, f] = item.transform;
+    const [x, , , , , f] = item.transform;
     const itemHeight = item.height || Math.abs(item.transform[3]) || 10;
     const itemWidth = item.width || item.str.length * (itemHeight * 0.5);
 

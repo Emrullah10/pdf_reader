@@ -22,7 +22,7 @@ export const buildContainer = (config) => {
   const uploadDocument = makeUploadDocument({ documentRepo, pageRepo, wordRepo, extractor, normalize });
   const getDocument = makeGetDocument({ documentRepo });
   const listDocuments = makeListDocuments({ documentRepo });
-  const searchDocuments = makeSearchDocuments({ documentRepo, wordRepo, normalize });
+  const searchDocuments = makeSearchDocuments({ wordRepo, normalize });
 
   const documentController = makeDocumentController({
     uploadDocument,

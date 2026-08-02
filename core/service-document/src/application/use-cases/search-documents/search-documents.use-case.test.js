@@ -1,6 +1,6 @@
 import { makeSearchDocuments } from './search-documents.use-case.js';
 import { makeFakeDocumentRepository } from '../../../../test/fakes/fake-document-repository.js';
-import { makeFakePageRepository, makeFakeWordRepository } from '../../../../test/fakes/fake-page-word-repository.js';
+import { makeFakeWordRepository } from '../../../../test/fakes/fake-page-word-repository.js';
 
 const turkishNormalize = (s) => s.toLowerCase().replace('ı', 'i').replace('ş', 's');
 
@@ -20,7 +20,7 @@ describe('makeSearchDocuments', () => {
       { pageId: 'page-2', text: 'İstanbul', textNormalized: 'istanbul', x: 3, y: 3, w: 5, h: 5, wordIndex: 0 },
     ]);
 
-    const searchDocuments = makeSearchDocuments({ documentRepo, wordRepo, normalize: turkishNormalize });
+    const searchDocuments = makeSearchDocuments({ wordRepo, normalize: turkishNormalize });
 
     const result = await searchDocuments({ userId: 'user-1', query: 'istanbul', documentIds: [], _testContext: { pagesById, documentsById } });
 
@@ -31,9 +31,8 @@ describe('makeSearchDocuments', () => {
   });
 
   it('returns zero matches for a query that does not appear', async () => {
-    const documentRepo = makeFakeDocumentRepository([{ id: 'doc-1', userId: 'user-1', originalName: 'a.pdf', status: 'ready' }]);
     const wordRepo = makeFakeWordRepository([]);
-    const searchDocuments = makeSearchDocuments({ documentRepo, wordRepo, normalize: turkishNormalize });
+    const searchDocuments = makeSearchDocuments({ wordRepo, normalize: turkishNormalize });
 
     const result = await searchDocuments({ userId: 'user-1', query: 'nonexistent', documentIds: [], _testContext: { pagesById: {}, documentsById: {} } });
 

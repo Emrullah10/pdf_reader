@@ -1,4 +1,4 @@
-export const makeSearchDocuments = ({ documentRepo, wordRepo, normalize }) => {
+export const makeSearchDocuments = ({ wordRepo, normalize }) => {
   return async ({ userId, query, documentIds = [], _testContext }) => {
     const normalizedQuery = normalize(query);
 
