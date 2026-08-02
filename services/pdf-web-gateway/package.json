@@ -1,0 +1,20 @@
+{
+  "name": "@pdf-reader/service-gateway",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "start": "node main.js"
+  },
+  "dependencies": {
+    "@pdf-reader/config": "*",
+    "@pdf-reader/errors": "*",
+    "@pdf-reader/helper": "*",
+    "@pdf-reader/middlewares": "*",
+    "cookie-parser": "^1.4.6",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.4.0",
+    "http-proxy-middleware": "^3.0.3",
+    "jsonwebtoken": "^9.0.2"
+  }
+}
