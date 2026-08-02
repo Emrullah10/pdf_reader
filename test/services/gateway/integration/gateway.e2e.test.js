@@ -86,4 +86,23 @@ describe('gateway HTTP API (e2e)', () => {
     const meRes = await agent.get('/api/gateway/me');
     expect(meRes.status).toBe(401);
   });
+
+  it('proxies an authenticated request to the document service with a translated Authorization header', async () => {
+    const agent = request.agent(app);
+    const email = uniqueEmail();
+
+    const csrfProbe = await agent.get('/api/gateway/me');
+    const xsrfToken = csrfProbe.headers['set-cookie']
+      .find((c) => c.startsWith('XSRF-TOKEN='))
+      .split('XSRF-TOKEN=')[1]
+      .split(';')[0];
+
+    await agent.post('/api/gateway/register').set('X-XSRF-TOKEN', xsrfToken).send({ email, password: 'abcd1234', name: 'Ada' });
+    await agent.post('/api/gateway/login').set('X-XSRF-TOKEN', xsrfToken).send({ email, password: 'abcd1234' });
+
+    const res = await agent.get('/api/documents');
+
+    expect(res.status).toBe(200);
+    expect(res.body.documents).toEqual([]);
+  });
 });

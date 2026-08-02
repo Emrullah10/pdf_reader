@@ -3,6 +3,7 @@ import cookieParser from 'cookie-parser';
 import { jsonBody, notFound } from '@pdf-reader/middlewares';
 import { handleErrors } from '@pdf-reader/errors';
 import { makeIdentityClient } from './clients/identity-client.js';
+import { readAuthCookies } from './auth/cookies.js';
 import { makeGatewayController } from './interfaces/http/gateway.controller.js';
 import { makeGatewayRoutes } from './interfaces/http/gateway-routes.js';
 import { makeProxyRoutes } from './interfaces/http/proxy-routes.js';
@@ -27,7 +28,7 @@ export const boot = (config) => {
     '/api/gateway',
     makeGatewayRoutes({ gatewayController, requireAuth, requireCsrfToken, strictAuthLimiter }),
   );
-  app.use(makeProxyRoutes({ routeTable, requireAuth }));
+  app.use(makeProxyRoutes({ routeTable, requireAuth, readAuthCookies }));
 
   app.use(notFound());
   app.use(handleErrors);
