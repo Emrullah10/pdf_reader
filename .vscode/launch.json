@@ -1,0 +1,79 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Web Gateway (pdf-web-gateway)",
+      "program": "${workspaceFolder}/services/pdf-web-gateway/main.js",
+      "cwd": "${workspaceFolder}/services/pdf-web-gateway",
+      "restart": true,
+      "console": "internalConsole",
+      "envFile": "${workspaceFolder}/.env",
+      "preLaunchTask": "Stop All Services"
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Identity Service (pdf-service-identity)",
+      "program": "${workspaceFolder}/services/pdf-service-identity/main.js",
+      "cwd": "${workspaceFolder}/services/pdf-service-identity",
+      "restart": true,
+      "console": "internalConsole",
+      "envFile": "${workspaceFolder}/.env",
+      "preLaunchTask": "Stop All Services"
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Document Service (pdf-service-document)",
+      "program": "${workspaceFolder}/services/pdf-service-document/main.js",
+      "cwd": "${workspaceFolder}/services/pdf-service-document",
+      "restart": true,
+      "console": "internalConsole",
+      "envFile": "${workspaceFolder}/.env",
+      "preLaunchTask": "Stop All Services"
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Conversion Service (pdf-service-conversion)",
+      "program": "${workspaceFolder}/services/pdf-service-conversion/main.js",
+      "cwd": "${workspaceFolder}/services/pdf-service-conversion",
+      "restart": true,
+      "console": "internalConsole",
+      "envFile": "${workspaceFolder}/.env",
+      "preLaunchTask": "Stop All Services"
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Active Backend Service",
+      "program": "${fileDirname}/main.js",
+      "cwd": "${fileDirname}",
+      "restart": true,
+      "console": "internalConsole",
+      "envFile": "${workspaceFolder}/.env",
+      "preLaunchTask": "Stop All Services"
+    },
+    {
+      "type": "node",
+      "request": "attach",
+      "name": "Attach to Backend Service (9229)",
+      "port": 9229,
+      "restart": true
+    }
+  ],
+  "compounds": [
+    {
+      "name": "All Backend Services",
+      "configurations": [
+        "Web Gateway (pdf-web-gateway)",
+        "Identity Service (pdf-service-identity)",
+        "Document Service (pdf-service-document)",
+        "Conversion Service (pdf-service-conversion)"
+      ],
+      "stopAll": true
+    }
+  ]
+}

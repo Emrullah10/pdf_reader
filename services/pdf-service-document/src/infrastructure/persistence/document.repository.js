@@ -48,4 +48,9 @@ export const makeDocumentRepository = ({ pool }) => ({
     );
     return rowToDocument(rows[0]);
   },
+
+  async deleteById(id) {
+    // document_pages and page_words cascade-delete via their ON DELETE CASCADE foreign keys.
+    await pool.query('DELETE FROM documents WHERE id = $1', [id]);
+  },
 });

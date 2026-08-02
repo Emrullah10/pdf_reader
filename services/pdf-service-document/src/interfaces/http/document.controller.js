@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, createReadStream } from 'node:fs';
 import { join } from 'node:path';
 import { translateDomainError } from '@pdf-reader/core-service-document/src/interfaces/http/translate-domain-error.js';
 
@@ -13,9 +13,18 @@ const toPublicDocument = (doc) => ({
   hasTextLayer: doc.hasTextLayer,
   errorMessage: doc.errorMessage,
   createdAt: doc.createdAt,
+  storagePath: doc.storagePath,
 });
 
-export const makeDocumentController = ({ uploadDocument, getDocument, listDocuments, searchDocuments, storageDir }) => ({
+export const makeDocumentController = ({
+  uploadDocument,
+  getDocument,
+  listDocuments,
+  searchDocuments,
+  ingestOcrWords,
+  deleteDocument,
+  storageDir,
+}) => ({
   upload: async (req, res, next) => {
     try {
       if (!req.file) {
@@ -51,6 +60,16 @@ export const makeDocumentController = ({ uploadDocument, getDocument, listDocume
     }
   },
 
+  download: async (req, res, next) => {
+    try {
+      const document = await getDocument({ documentId: req.params.id, userId: req.user.sub });
+      res.status(200).set('Content-Type', 'application/pdf');
+      createReadStream(document.storagePath).pipe(res);
+    } catch (err) {
+      next(translateDomainError(err));
+    }
+  },
+
   list: async (req, res, next) => {
     try {
       const documents = await listDocuments({ userId: req.user.sub });
@@ -75,6 +94,36 @@ export const makeDocumentController = ({ uploadDocument, getDocument, listDocume
       });
 
       res.status(200).json(result);
+    } catch (err) {
+      next(translateDomainError(err));
+    }
+  },
+
+  remove: async (req, res, next) => {
+    try {
+      await deleteDocument({ documentId: req.params.id, userId: req.user.sub });
+      res.status(204).send();
+    } catch (err) {
+      next(translateDomainError(err));
+    }
+  },
+
+  ingestOcrWords: async (req, res, next) => {
+    try {
+      const { words } = req.body;
+      if (!Array.isArray(words)) {
+        res.status(400).json({ error: { message: 'words must be an array', details: null } });
+        return;
+      }
+
+      const document = await ingestOcrWords({
+        documentId: req.params.id,
+        userId: req.user.sub,
+        pageNo: Number(req.params.pageNo),
+        words,
+      });
+
+      res.status(200).json({ document: toPublicDocument(document) });
     } catch (err) {
       next(translateDomainError(err));
     }

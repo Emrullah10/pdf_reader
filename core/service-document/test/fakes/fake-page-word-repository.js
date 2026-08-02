@@ -8,6 +8,9 @@ export const makeFakePageRepository = () => {
       pages.push(...created);
       return created;
     },
+    async listByDocument(documentId) {
+      return pages.filter((p) => p.documentId === documentId);
+    },
     _all: pages,
   };
 };

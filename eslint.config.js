@@ -30,6 +30,6 @@ export default [
     },
   },
   {
-    ignores: ['node_modules/', 'coverage/', 'dist/'],
+    ignores: ['node_modules/', 'coverage/', 'dist/', 'pdf-web-app/'],
   },
 ];

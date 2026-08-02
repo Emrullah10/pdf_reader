@@ -39,6 +39,10 @@ export const makeFakeDocumentRepository = (initial = []) => {
       }
       return doc;
     },
+    async deleteById(id) {
+      const index = documents.findIndex((d) => d.id === id);
+      if (index !== -1) documents.splice(index, 1);
+    },
     _all: documents,
   };
 };

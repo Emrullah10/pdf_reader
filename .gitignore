@@ -1,9 +1,45 @@
+# Dependencies
 node_modules/
+
+# Environment files
 .env
+.env.local
+.env.development
+.env.production
 .env.*
 !.env.example
+
+# Build & Output
 dist/
-coverage/
-docs/
+build/
+.output/
+
+# Logs
 *.log
+logs/
+
+# Testing & Coverage
+coverage/
+
+# Temporary / Local Uploads
+tmp/
+uploads/
+storage/
+
+# System / OS
 .DS_Store
+Thumbs.db
+
+# IDE & Editor
+.idea/
+*.suo
+*.ntvsload
+*.njsproj
+*.sln
+*.swp
+
+# VS Code (preserve team launch & task settings)
+.vscode/*
+!.vscode/launch.json
+!.vscode/tasks.json
+!.vscode/settings.json

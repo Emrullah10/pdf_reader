@@ -58,13 +58,16 @@ describe('extractPdfText', () => {
       expect(current.x).toBeGreaterThanOrEqual(previous.x + previous.w - 0.01);
     }
 
-    // The words should collectively span roughly the same width as the sum of their individual widths
-    // (proportional-by-character-count split should account for the full run width, no width lost or added).
+    // The words collectively span at least the sum of their individual widths (since the span also
+    // includes the whitespace gaps between words, which are excluded from each word's own width) —
+    // but not by an unreasonable margin, since the gap between any two words should be small relative
+    // to the words themselves for ordinary prose.
     const firstWord = words[0];
     const lastWord = words[words.length - 1];
     const totalSpan = lastWord.x + lastWord.w - firstWord.x;
     const sumOfWidths = words.reduce((sum, w) => sum + w.w, 0);
-    expect(totalSpan).toBeCloseTo(sumOfWidths, 1);
+    expect(totalSpan).toBeGreaterThanOrEqual(sumOfWidths);
+    expect(totalSpan).toBeLessThan(sumOfWidths * 1.5);
   });
 
   it('throws a descriptive error for a non-PDF buffer', async () => {

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createProxyMiddleware } from 'http-proxy-middleware';
+import { createProxyMiddleware, fixRequestBody } from 'http-proxy-middleware';
 
 export const makeProxyRoutes = ({ routeTable, requireAuth, readAuthCookies }) => {
   const router = Router();
@@ -19,6 +19,11 @@ export const makeProxyRoutes = ({ routeTable, requireAuth, readAuthCookies }) =>
             if (accessToken) {
               proxyReq.setHeader('Authorization', `Bearer ${accessToken}`);
             }
+            // app.use(jsonBody()) is mounted globally (needed for /api/gateway/*), so it
+            // already consumes and parses the request stream before this proxy middleware
+            // runs. Without re-serializing req.body here, any proxied POST/PUT with a JSON
+            // body hangs forever — the target service waits on a body that never arrives.
+            fixRequestBody(proxyReq, req);
           },
         },
       }),
