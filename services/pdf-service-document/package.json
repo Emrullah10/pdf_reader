@@ -13,6 +13,7 @@
     "@pdf-reader/helper": "*",
     "@pdf-reader/middlewares": "*",
     "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
     "multer": "^1.4.5-lts.1",
     "pdfjs-dist": "^4.7.76",
     "pg": "^8.12.0"
