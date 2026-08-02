@@ -22,7 +22,7 @@ const groupTextItemsIntoWords = (textContent, pageHeight) => {
       words.push({
         text: piece,
         x: cursorX,
-        y: pageHeight - f,
+        y: pageHeight - f, // baseline position (flipped to top-left origin), not the glyph box's top edge
         w: pieceWidth,
         h: itemHeight,
         wordIndex: wordIndex++,
