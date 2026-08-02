@@ -1,4 +1,5 @@
 export default {
+  maxWorkers: 1,
   projects: [
     {
       displayName: 'unit',

@@ -15,7 +15,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test:unit": "node --experimental-vm-modules node_modules/.bin/jest --selectProjects unit",
-    "test:integration": "node --experimental-vm-modules node_modules/.bin/jest --selectProjects integration --runInBand",
+    "test:integration": "node --experimental-vm-modules node_modules/.bin/jest --selectProjects integration",
     "test": "node --experimental-vm-modules node_modules/.bin/jest",
     "db:build-schema": "node scripts/build-schema.js"
   },
