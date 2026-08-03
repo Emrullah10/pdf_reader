@@ -163,24 +163,37 @@ const openPdf = (storagePath) =>
 export const extractPdfTextByPage = async (storagePath, onPage) => {
   const pdf = await openPdf(storagePath);
   let anyWords = false;
+  // Which of the three pdf.js calls dominates isn't obvious from the code — getOperatorList() is
+  // the expensive one in principle, but only on the pages that actually need it.
+  const spent = { getPage: 0, textContent: 0, operatorList: 0, grouping: 0, opListPages: 0 };
 
   try {
     for (let pageNo = 1; pageNo <= pdf.numPages; pageNo++) {
+      let mark = performance.now();
       const page = await pdf.getPage(pageNo);
+      spent.getPage += performance.now() - mark;
 
       try {
         const viewport = page.getViewport({ scale: 1 });
+        mark = performance.now();
         const textContent = await page.getTextContent();
+        spent.textContent += performance.now() - mark;
 
         // getOperatorList() re-walks the whole content stream and is the single most expensive step
         // in this loop — far more than getTextContent() alone. It's only needed to split a multi-word
         // text item proportionally by real glyph advances, so pages made up entirely of single-word
         // items (common once whitespace already separates runs) skip it completely.
-        const glyphWidthIndex = pageNeedsGlyphWidths(textContent)
-          ? buildGlyphWidthIndex(await page.getOperatorList())
-          : null;
+        let glyphWidthIndex = null;
+        if (pageNeedsGlyphWidths(textContent)) {
+          mark = performance.now();
+          glyphWidthIndex = buildGlyphWidthIndex(await page.getOperatorList());
+          spent.operatorList += performance.now() - mark;
+          spent.opListPages++;
+        }
 
+        mark = performance.now();
         const words = groupTextItemsIntoWords(textContent, viewport.height, glyphWidthIndex);
+        spent.grouping += performance.now() - mark;
         if (words.length > 0) anyWords = true;
 
         // pageCount is known as soon as the document is open, so it rides along with every page
@@ -193,6 +206,13 @@ export const extractPdfTextByPage = async (storagePath, onPage) => {
         page.cleanup();
       }
     }
+
+    console.log(
+      `[extractPdfTextByPage] ${pdf.numPages} pages — getPage ${Math.round(spent.getPage)}ms, ` +
+        `textContent ${Math.round(spent.textContent)}ms, ` +
+        `operatorList ${Math.round(spent.operatorList)}ms (${spent.opListPages} pages), ` +
+        `grouping ${Math.round(spent.grouping)}ms`,
+    );
 
     return { pageCount: pdf.numPages, hasTextLayer: anyWords };
   } finally {
