@@ -12,7 +12,10 @@ import { ROUTE_PATHS } from '@shared/constant/route-paths';
 const ReaderPage = () => {
   const { documentId } = useParams();
   const { data: document, isLoading } = useDocument(documentId, {
-    refetchInterval: (query) => (query.state.data?.status === 'processing' ? 1500 : false),
+    // query.state.data is the raw response, before the hook's `select` unwraps it — reading
+    // .status directly off it always yielded undefined, so polling never started and the page
+    // stayed on "işleniyor" until it was remounted.
+    refetchInterval: (query) => (query.state.data?.document?.status === 'processing' ? 1500 : false),
   });
   const search = useSearchDocuments();
   const [activeMatchIndex, setActiveMatchIndex] = useState(-1);
