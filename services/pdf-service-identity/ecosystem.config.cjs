@@ -2,7 +2,7 @@ module.exports = {
   apps: [
     {
       name: 'pdf-service-identity',
-      script: './main.js',
+      script: require('path').join(__dirname, 'main.js'),
       // dotenv reads process.cwd(); pin cwd to the repo root (where the shared .env lives)
       // so the process finds it regardless of which directory pm2 was launched from.
       cwd: require('path').resolve(__dirname, '../..'),
