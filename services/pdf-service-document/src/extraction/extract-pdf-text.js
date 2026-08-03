@@ -4,9 +4,10 @@ import { dirname, join } from 'node:path';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const standardFontDataUrl = pathToFileURL(
-  join(dirname(require.resolve('pdfjs-dist/package.json')), 'standard_fonts') + '/',
-).href;
+// A plain filesystem path, not a file:// URL: pdf.js fetches this location, and Node's fetch()
+// rejects file:// with "not implemented", so every standard font failed to load and threw once per
+// use — thousands of exceptions over a long document, for metrics that were on disk all along.
+const standardFontDataUrl = join(dirname(require.resolve('pdfjs-dist/package.json')), 'standard_fonts') + '/';
 
 // pdf.js exposes per-glyph advance widths (in 1/1000 em) only through the operator list, not through
 // getTextContent(). Collect them per drawn string so word boxes can be measured with the font's real
