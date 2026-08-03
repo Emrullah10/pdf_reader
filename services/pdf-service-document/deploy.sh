@@ -15,7 +15,7 @@ cd "$SERVICE_DIR"
 npm ci --prefer-offline --no-audit
 
 if command -v pm2 &> /dev/null; then
-  pm2 reload ecosystem.config.js --env production || pm2 start ecosystem.config.js --env production
+  pm2 reload ecosystem.config.cjs --env production || pm2 start ecosystem.config.cjs --env production
   pm2 save
   pm2 status pdf-service-document
 else

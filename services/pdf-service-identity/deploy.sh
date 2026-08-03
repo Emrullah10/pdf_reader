@@ -26,7 +26,7 @@ npm ci --prefer-offline --no-audit
 # 3. PM2 Zero-Downtime Reload
 echo "🔄 [PM2] Servis reload ediliyor..."
 if command -v pm2 &> /dev/null; then
-  pm2 reload ecosystem.config.js --env production || pm2 start ecosystem.config.js --env production
+  pm2 reload ecosystem.config.cjs --env production || pm2 start ecosystem.config.cjs --env production
   pm2 save
   echo "🩺 [PM2 STATUS] Güncel servis durumu:"
   pm2 status pdf-service-identity

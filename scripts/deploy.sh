@@ -40,14 +40,14 @@ fi
 # 6. PM2 Servislerinin Kesintisiz (Zero-Downtime Reload) Başlatılması
 echo "🔄 [PM2] Mikroservisler yeniden başlatılıyor (reload)..."
 if command -v pm2 &> /dev/null; then
-  if [ -f "ecosystem.config.js" ]; then
-    pm2 reload ecosystem.config.js --env production || pm2 start ecosystem.config.js --env production
+  if [ -f "ecosystem.config.cjs" ]; then
+    pm2 reload ecosystem.config.cjs --env production || pm2 start ecosystem.config.cjs --env production
   else
     for service_dir in services/*/; do
-      if [ -f "${service_dir}ecosystem.config.js" ]; then
+      if [ -f "${service_dir}ecosystem.config.cjs" ]; then
         service_name=$(basename "$service_dir")
         echo "   -> Reloader: ${service_name}"
-        (cd "$service_dir" && pm2 reload ecosystem.config.js --env production || pm2 start ecosystem.config.js --env production)
+        (cd "$service_dir" && pm2 reload ecosystem.config.cjs --env production || pm2 start ecosystem.config.cjs --env production)
       fi
     done
   fi

@@ -1,4 +1,4 @@
-export default {
+module.exports = {
   apps: [
     {
       name: 'pdf-web-gateway',
