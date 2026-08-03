@@ -59,20 +59,41 @@ export const makeProcessDocument = ({ documentRepo, pageRepo, wordRepo, extracto
       // Reported alongside pagesDone so progress is a real fraction from the first flush on; the
       // extractor knows the total as soon as it opens the file, long before the pass finishes.
       let totalPages = null;
+      // Extraction and persistence interleave, so a single wall-clock total can't say which one is
+      // slow. Tracking them separately makes the split visible in the worker log.
+      let parseMs = 0;
+      let writeMs = 0;
+      let wordsWritten = 0;
+      let sinceLastPage = performance.now();
+
       const { pageCount, hasTextLayer } = await extractor.extractByPage(storagePath, async (page) => {
+        parseMs += performance.now() - sinceLastPage;
         totalPages = page.pageCount ?? totalPages;
         batch.push(page);
+        wordsWritten += page.words.length;
+
         if (batch.length >= PAGE_BATCH_SIZE) {
           const toFlush = batch;
           batch = [];
+          const writeStart = performance.now();
           await flush(documentId, toFlush);
           pagesFlushed += toFlush.length;
           await onProgress?.({ pagesDone: pagesFlushed, pageCount: totalPages });
+          writeMs += performance.now() - writeStart;
         }
+        sinceLastPage = performance.now();
       });
+
+      const finalWriteStart = performance.now();
       await flush(documentId, batch);
       pagesFlushed += batch.length;
       await onProgress?.({ pagesDone: pagesFlushed, pageCount: totalPages });
+      writeMs += performance.now() - finalWriteStart;
+
+      console.log(
+        `[processDocument] ${documentId}: ${pagesFlushed} pages, ${wordsWritten} words — ` +
+          `parse ${Math.round(parseMs)}ms, write ${Math.round(writeMs)}ms`,
+      );
 
       return documentRepo.updateStatus(documentId, {
         status: 'ready',
