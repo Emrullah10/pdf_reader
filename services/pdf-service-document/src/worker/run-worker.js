@@ -24,7 +24,7 @@ export const processOneJob = async ({ job, documentRepo, pageRepo, wordRepo, job
     extractor,
     normalize,
     runInTransaction,
-    onProgress: ({ pagesDone }) => jobRepo.recordProgress(job.id, { pagesDone }),
+    onProgress: ({ pagesDone, pageCount }) => jobRepo.recordProgress(job.id, { pagesDone, pageCount }),
   });
 
   const result = await processDocument({ documentId: job.documentId, storagePath: document.storagePath });

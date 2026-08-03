@@ -56,19 +56,23 @@ export const makeProcessDocument = ({ documentRepo, pageRepo, wordRepo, extracto
       // from two-per-page to two-per-batch.
       let batch = [];
       let pagesFlushed = 0;
+      // Reported alongside pagesDone so progress is a real fraction from the first flush on; the
+      // extractor knows the total as soon as it opens the file, long before the pass finishes.
+      let totalPages = null;
       const { pageCount, hasTextLayer } = await extractor.extractByPage(storagePath, async (page) => {
+        totalPages = page.pageCount ?? totalPages;
         batch.push(page);
         if (batch.length >= PAGE_BATCH_SIZE) {
           const toFlush = batch;
           batch = [];
           await flush(documentId, toFlush);
           pagesFlushed += toFlush.length;
-          await onProgress?.({ pagesDone: pagesFlushed });
+          await onProgress?.({ pagesDone: pagesFlushed, pageCount: totalPages });
         }
       });
       await flush(documentId, batch);
       pagesFlushed += batch.length;
-      await onProgress?.({ pagesDone: pagesFlushed });
+      await onProgress?.({ pagesDone: pagesFlushed, pageCount: totalPages });
 
       return documentRepo.updateStatus(documentId, {
         status: 'ready',

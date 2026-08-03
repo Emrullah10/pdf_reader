@@ -65,7 +65,9 @@ const ReaderPage = () => {
         <p>
           {document.progress?.pageCount
             ? `Belge işleniyor: ${document.progress.pagesDone}/${document.progress.pageCount} sayfa…`
-            : 'Belge işleniyor, lütfen bekleyin…'}
+            : document.progress?.pagesDone
+              ? `Belge işleniyor: ${document.progress.pagesDone} sayfa…`
+              : 'Belge işleniyor, lütfen bekleyin…'}
         </p>
       )}
       {document.status === 'failed' && (

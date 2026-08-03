@@ -182,7 +182,10 @@ export const extractPdfTextByPage = async (storagePath, onPage) => {
         const words = groupTextItemsIntoWords(textContent, viewport.height, glyphWidthIndex);
         if (words.length > 0) anyWords = true;
 
-        await onPage({ pageNo, width: viewport.width, height: viewport.height, words });
+        // pageCount is known as soon as the document is open, so it rides along with every page
+        // rather than only being returned at the end — that lets a caller report real progress
+        // ("525/1237") while the pass is still running instead of an indeterminate wait.
+        await onPage({ pageNo, pageCount: pdf.numPages, width: viewport.width, height: viewport.height, words });
       } finally {
         // pdf.js caches every page it hands out; without this the document holds all of them
         // until destroy(), which reintroduces exactly the growth this function exists to avoid.

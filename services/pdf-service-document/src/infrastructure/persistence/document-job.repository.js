@@ -63,10 +63,14 @@ export const makeDocumentJobRepository = ({ pool }) => ({
     }
   },
 
-  async recordProgress(jobId, { pagesDone }) {
+  // page_count is COALESCEd rather than overwritten: it is the same total on every call, so once
+  // set there is nothing to update, and a caller that doesn't know it yet must not blank it.
+  async recordProgress(jobId, { pagesDone, pageCount = null }) {
     await pool.query(
-      `UPDATE document_jobs SET pages_done = $2, updated_at = now() WHERE id = $1`,
-      [jobId, pagesDone],
+      `UPDATE document_jobs
+          SET pages_done = $2, page_count = COALESCE($3, page_count), updated_at = now()
+        WHERE id = $1`,
+      [jobId, pagesDone, pageCount],
     );
   },
 
