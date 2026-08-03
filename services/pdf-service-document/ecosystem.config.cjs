@@ -3,6 +3,9 @@ module.exports = {
     {
       name: 'pdf-service-document',
       script: './main.js',
+      // dotenv reads process.cwd(); pin cwd to the repo root (where the shared .env lives)
+      // so the process finds it regardless of which directory pm2 was launched from.
+      cwd: require('path').resolve(__dirname, '../..'),
       instances: 1,
       exec_mode: 'fork',
       // The API process no longer runs PDF extraction itself (see pdf-service-document-worker) —
@@ -12,6 +15,7 @@ module.exports = {
     {
       name: 'pdf-service-document-worker',
       script: './worker.js',
+      cwd: require('path').resolve(__dirname, '../..'),
       instances: 1,
       exec_mode: 'fork',
       // This host has ~2.7GB shared across 13 pm2 processes, so an unbounded service risks the
