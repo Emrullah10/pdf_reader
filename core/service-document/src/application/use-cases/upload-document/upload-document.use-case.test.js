@@ -17,6 +17,7 @@ const buildProcessDocument = ({ documentRepo, extractor, pageRepo, wordRepo }) =
     wordRepo: wordRepo ?? makeFakeWordRepository(),
     extractor,
     normalize: (s) => s.toLowerCase(),
+    runInTransaction: (run) => run(null),
   });
 
 describe('makeUploadDocument', () => {

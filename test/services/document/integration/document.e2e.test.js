@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { boot } from '../../../../services/pdf-service-document/src/boot.js';
+import { runWorker } from '../../../../services/pdf-service-document/src/worker/run-worker.js';
 import { truncateAll, seedUser } from './config/db-setup.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -22,6 +23,12 @@ describe('document HTTP API (e2e)', () => {
   const { app, pool } = boot(testConfig);
   let userId;
   let authHeader;
+  let workerStopped = false;
+  const workerDone = runWorker(testConfig, {
+    shouldStop: () => workerStopped,
+    pollIntervalMs: 50,
+    closePoolOnExit: false,
+  });
 
   // Extraction now runs after the upload response is sent, so anything that depends on its
   // output (page count, search hits) has to wait for the status to leave 'processing' first.
@@ -57,6 +64,8 @@ describe('document HTTP API (e2e)', () => {
   });
 
   afterAll(async () => {
+    workerStopped = true;
+    await workerDone;
     await pool.end();
   });
 
@@ -84,12 +93,15 @@ describe('document HTTP API (e2e)', () => {
   });
 
   it('lists only the uploading user\'s documents', async () => {
-    await request(app).post('/api/documents').set('Authorization', authHeader).attach('file', join(fixturesDir, 'sample-text.pdf'));
+    const uploadRes = await request(app).post('/api/documents').set('Authorization', authHeader).attach('file', join(fixturesDir, 'sample-text.pdf'));
 
     const res = await request(app).get('/api/documents').set('Authorization', authHeader);
 
     expect(res.status).toBe(200);
     expect(res.body.documents).toHaveLength(1);
+
+    // Drain background extraction before the next beforeEach TRUNCATEs (see 'gets a single document').
+    await waitForStatus(uploadRes.body.document.id, 'ready');
   });
 
   it('gets a single document by id', async () => {
@@ -100,6 +112,10 @@ describe('document HTTP API (e2e)', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.document.id).toBe(documentId);
+
+    // Background extraction is still writing in its own transaction at this point; letting it run
+    // past the test would race the next test's beforeEach TRUNCATE and deadlock against it.
+    await waitForStatus(documentId, 'ready');
   });
 
   it('returns 404 for a document belonging to another user', async () => {
@@ -112,6 +128,9 @@ describe('document HTTP API (e2e)', () => {
     const res = await request(app).get(`/api/documents/${documentId}`).set('Authorization', `Bearer ${otherToken}`);
 
     expect(res.status).toBe(404);
+
+    // Same reasoning as above: drain background extraction before the next beforeEach TRUNCATEs.
+    await waitForStatus(documentId, 'ready');
   });
 
   it('searches for a word that appears in an uploaded document and returns coordinates', async () => {

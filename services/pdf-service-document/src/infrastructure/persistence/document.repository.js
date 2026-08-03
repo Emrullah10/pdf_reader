@@ -10,6 +10,13 @@ const rowToDocument = (row) => ({
   hasTextLayer: row.has_text_layer,
   errorMessage: row.error_message,
   createdAt: row.created_at,
+  // Present only when a document_jobs row exists and the document is still processing — the join
+  // columns are undefined outside SELECTs that include it (see findByIdAndUser/listByUser), so
+  // pagesDone stays null rather than 0 for documents that predate the queue or already finished.
+  progress:
+    row.job_pages_done != null || row.job_page_count != null
+      ? { pagesDone: row.job_pages_done ?? 0, pageCount: row.job_page_count ?? null }
+      : null,
 });
 
 export const makeDocumentRepository = ({ pool }) => ({
@@ -29,12 +36,25 @@ export const makeDocumentRepository = ({ pool }) => ({
   },
 
   async findByIdAndUser(id, userId) {
-    const { rows } = await pool.query('SELECT * FROM documents WHERE id = $1 AND user_id = $2', [id, userId]);
+    const { rows } = await pool.query(
+      `SELECT d.*, j.pages_done AS job_pages_done, j.page_count AS job_page_count
+       FROM documents d
+       LEFT JOIN document_jobs j ON j.document_id = d.id
+       WHERE d.id = $1 AND d.user_id = $2`,
+      [id, userId],
+    );
     return rows[0] ? rowToDocument(rows[0]) : null;
   },
 
   async listByUser(userId) {
-    const { rows } = await pool.query('SELECT * FROM documents WHERE user_id = $1 ORDER BY created_at DESC', [userId]);
+    const { rows } = await pool.query(
+      `SELECT d.*, j.pages_done AS job_pages_done, j.page_count AS job_page_count
+       FROM documents d
+       LEFT JOIN document_jobs j ON j.document_id = d.id
+       WHERE d.user_id = $1
+       ORDER BY d.created_at DESC`,
+      [userId],
+    );
     return rows.map(rowToDocument);
   },
 

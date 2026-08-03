@@ -11,6 +11,7 @@
 5. [tropiq-web-gateway — Sınır Katmanı](#5-tropiq-web-gateway--sınır-katmanı)
 6. [db-schemas/ — core/ Şema İlişkisi](#6-db-schemas--core-şema-ilişkisi)
 7. [Servis Kabuğu Standart Dosyaları](#7-servis-kabuğu-standart-dosyaları)
+   - 7.1 [Deploy Script Mimarisi (deploy.sh)](#71-deploy-script-mimarisi-deploysh)
 8. [docker-compose.e2e.yml — Orkestrasyon](#8-docker-composee2eyml--orkestrasyon)
 9. [Test Stratejisi](#9-test-stratejisi)
 10. [tropiq-web-app — Frontend Mimarisi](#10-tropiq-web-app--frontend-mimarisi)
@@ -36,7 +37,7 @@ Bu üç prensip, aşağıdaki tüm klasör kararlarının temelini oluşturur.
 ```
 tropiq-mono-repo/
 ├── core/               # Framework-bağımsız iş mantığı (domain + application + infrastructure)
-├── services/           # Çalıştırılabilir servis kabukları (main.js, boot, config, deploy)
+├── services/           # Çalıştırılabilir servis kabukları (main.js, boot, config, ldeploy)
 ├── packages/           # Servisler arası paylaşılan npm paketleri
 ├── db-schemas/         # PostgreSQL şema tanımları (SQL) + migration'lar
 ├── test/               # Jest: unit/integration/e2e/custom testleri, servis bazlı
@@ -110,6 +111,7 @@ export const buildContainer = ({ rawQueryFn = rawQuery, fetchFn, identityBaseUrl
 ```
 
 **Neden class/DI-framework değil de factory fonksiyonu (`make*`)**: Bu proje bilinçli olarak hiçbir DI container kütüphanesi (InversifyJS, Awilix, vb.) kullanmıyor. Her `make*` fonksiyonu, bağımlılıklarını parametre olarak alan saf bir closure factory'dir (`makeCreateRfq({ rfqRepo, auditLogRepo }) => (input) => {...}`). Bu:
+
 - Bağımlılık grafiğinin tamamen `container.js`'te elle görülebilir olmasını sağlar — "büyü" yok, hangi use-case hangi repo'ya bağlı, tek dosyada okunabilir.
 - Testte gerçek repo yerine sahte (fake/stub) obje geçmeyi trivial yapar — class instantiate etmeye, mock kütüphanesine gerek yok.
 - `translateHttpErrors` gibi parametrelerle test/prod davranışının container seviyesinde değişebilmesini sağlar (örn. testte HTTP çevirisini kapatıp saf domain hatasını görmek).
@@ -195,6 +197,7 @@ services/tropiq-web-gateway/src/
 ```
 
 Gateway'in üstlendiği sorumluluklar:
+
 - **Authentication**: JWT access/refresh token doğrulama ve yenileme (`/api/gateway/refresh`), signed cookie üzerinden token taşınması.
 - **Session yönetimi**: `/api/gateway/logout`, `/api/gateway/logout-all`, `/api/gateway/sessions/revoke-by-role` (superadmin) — session'ların merkezi olarak iptal edilebilmesi.
 - **CSRF koruması**: `conditionalCsrfProtection` middleware'i + XSRF cookie üretimi.
@@ -231,18 +234,109 @@ Bu SQL şemaların **JS karşılığı**, ilgili `core/service-*/src/infrastruct
 
 Her `services/*` klasöründe neredeyse birebir aynı iskelet dosyalar tekrarlanır:
 
-| Dosya | Amaç |
-|---|---|
-| `main.js` | Process giriş noktası |
-| `src/boot.js` | HTTP server'ı ayağa kaldırma, middleware zincirini kurma |
-| `src/container.js` | Composition root (bkz. 3.2) |
-| `configs/app-config.js`, `configs/datasource-config.js` | Env değişkenlerinden config okuma |
-| `ecosystem.config.js` | PM2 process yönetimi tanımı (prod'da servisin nasıl çalıştırılacağı) |
-| `deploy.sh` | Deploy scripti |
-| `commit-and-tag.js` (veya `commit-and-tag-temp.js`) | Versiyon bump + git tag otomasyonu |
-| `*.postman_collection.json` | Manuel/keşif amaçlı API test koleksiyonu |
+| Dosya                                                       | Amaç                                                                           |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `main.js`                                                 | Process giriş noktası                                                         |
+| `src/boot.js`                                             | HTTP server'ı ayağa kaldırma, middleware zincirini kurma                     |
+| `src/container.js`                                        | Composition root (bkz. 3.2)                                                     |
+| `configs/app-config.js`, `configs/datasource-config.js` | Env değişkenlerinden config okuma                                             |
+| `ecosystem.config.js`                                     | PM2 process yönetimi tanımı (prod'da servisin nasıl çalıştırılacağı) |
+| `deploy.sh`                                               | Deploy scripti                                                                  |
+| `commit-and-tag.js` (veya `commit-and-tag-temp.js`)     | Versiyon bump + git tag otomasyonu                                              |
+| `*.postman_collection.json`                               | Manuel/keşif amaçlı API test koleksiyonu                                     |
 
 **Neden bu şablon tekrarlanıyor, ortak bir "servis başlatıcı" paketine çıkarılmadı**: Her servisin process yaşam döngüsü (port, PM2 instance sayısı, env dosyası) birbirinden bağımsız ve servis-özel karar gerektirir (örn. bir servis daha fazla worker instance'ı isteyebilir). Bu dosyaları paylaşılan bir pakete taşımak, her servisin kendi deploy/process davranışını override etme esnekliğini kaybettirirdi. Bunun yerine "kopyala-yapıştır bir şablon" bilinçli bir tercih: her servis kendi kabuğunun tam sahibi.
+
+### 7.1 Deploy Script Mimarisi (`deploy.sh`)
+
+Monorepo mimarisinde canlı sunucuya (Production / Staging) kod dağıtımı iki seviyede ele alınır: **Kök (Monorepo) Deploy Scripti** ve **Servis Bazlı Deploy Scripti**. Her iki script de PM2'nin `reload` (kesintisiz / zero-downtime) yeteneğinden faydalanarak uygulamanın hiç kesintiye uğramadan güncellenmesini sağlar.
+
+#### 7.1.1 Servis Bazlı Deploy Scripti (`services/<service-name>/deploy.sh`)
+
+Sadece tek bir mikroserviste değişiklik yapıldığında tüm projeyi rebuild etmek yerine yalnızca ilgili servisin güncellenmesini ve PM2 ile yeniden başlatılmasını sağlar.
+
+```bash
+#!/usr/bin/env bash
+set -e
+
+# SERVİS BAZLI DEPLOY SCRİPTİ (Örn: services/pdf-service-identity/deploy.sh)
+SERVICE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$SERVICE_DIR/../.." && pwd)"
+
+echo "🚀 [DEPLOY] Servis Dağıtımı Başlatılıyor: $(basename "$SERVICE_DIR")..."
+cd "$ROOT_DIR"
+
+# 1. Monorepo kod senkronizasyonu
+BRANCH="${1:-main}"
+git fetch origin
+git pull origin "$BRANCH"
+
+# 2. Servis bağımlılıkları ve izole kontroller
+cd "$SERVICE_DIR"
+npm ci --prefer-offline --no-audit
+
+# 3. PM2 Zero-Downtime Reload
+if command -v pm2 &> /dev/null; then
+  pm2 reload ecosystem.config.js --env production || pm2 start ecosystem.config.js --env production
+  pm2 save
+  pm2 status "$(basename "$SERVICE_DIR")"
+fi
+
+echo "✅ [SUCCESS] Servis başarıyla güncellendi!"
+```
+
+#### 7.1.2 Kök Monorepo Deploy Scripti (`scripts/deploy.sh`)
+
+Tüm repoyu, veritabanı şemalarını, React frontend uygulamasını ve arkadaki tüm servis kabuklarını tek adımla güncellemek için kullanılan ana scripttir.
+
+```bash
+#!/usr/bin/env bash
+set -e
+
+# KÖK MONOREPO DEPLOY SCRİPTİ (scripts/deploy.sh)
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
+
+echo "🚀 [DEPLOY] Monorepo Dağıtım İşlemi Başlatılıyor..."
+
+# 1. Git Güncellemesi
+BRANCH="${1:-main}"
+git fetch origin
+git checkout "$BRANCH"
+git pull origin "$BRANCH"
+
+# 2. Monorepo Bağımlılıkları
+npm ci --prefer-offline --no-audit
+
+# 3. Veritabanı Şemaları & Migration Build
+if [ -f "scripts/build-schema.js" ]; then
+  node scripts/build-schema.js
+fi
+
+# 4. Frontend Build (React SPA / Astro)
+if [ -d "pdf-web-app" ]; then
+  (cd pdf-web-app && npm run build)
+fi
+
+# 5. Tüm Servislerin PM2 ile Kesintisiz Restart Edilmesi
+if command -v pm2 &> /dev/null; then
+  for service_dir in services/*/; do
+    if [ -f "${service_dir}ecosystem.config.js" ]; then
+      (cd "$service_dir" && pm2 reload ecosystem.config.js --env production || pm2 start ecosystem.config.js --env production)
+    fi
+  done
+  pm2 save
+  pm2 status
+fi
+
+echo "✅ [SUCCESS] Tüm monorepo başarıyla canlıya alındı!"
+```
+
+#### 7.1.3 Dağıtım Kuralları & İpuçları
+- **NPM Script Kısayolu**: Kök `package.json` ve servis `package.json` dosyalarına `"deploy"` scripti eklenmiştir. Tek bir `npm run deploy` komutu ile tüm dağıtım süreci tetiklenebilir.
+- **İzin Yönetimi**: Script'lerin çalıştırılabilir olması için repo içinde `chmod +x scripts/deploy.sh` ve `chmod +x services/*/deploy.sh` yapılmalıdır.
+- **Sunucu & Cloudflare Entegrasyonu**: Sunucuda Cloudflare Tunnel / Nginx arkasında çalışan PM2 süreçleri `pm2 reload` komutuyla Socket/HTTP bağlantılarını düşürmeden sırayla yeni koda geçer.
+- **CI/CD Entegrasyonu**: GitHub Actions veya GitLab CI uzerinden sunucuya SSH bağlantısı ile `npm run deploy` veya `bash scripts/deploy.sh main` tetiklenebilir.
 
 ---
 
@@ -399,19 +493,19 @@ Tüm kullanıcıya görünen metin `useTranslation()` üzerinden `t('key')` ile 
 
 Bu, `.wolf/cerebrum.md`'nin (bkz. Bölüm 11) **Cursor editörü için paralel karşılığıdır**. Her `.mdc` dosyası, belirli bir glob pattern'inde otomatik olarak Cursor'a enjekte edilen bir kural setidir:
 
-| Dosya | Kapsam |
-|---|---|
-| `core-js-formatting.mdc` | JS-only zorunluluğu (TS yasak), Prettier hizası (tek tırnak, noktalı virgül) |
-| `imports-aliases-order.mdc` | Alias tercihi + import gruplama sırası |
-| `components-registry-vs-direct-imports.mdc` | Registry vs. direkt import ne zaman kullanılır (bkz. 10.3) |
-| `react-components-default-export.mdc` | Function component + default export konvansiyonu |
-| `mui-wrapper-components.mdc` | Ham MUI yerine wrapper zorunluluğu (bkz. 10.8) |
-| `zustand-store-patterns.mdc` | Selector zorunluluğu, slice pattern, `getState()` kullanımı (bkz. 10.4) |
-| `react-query-patterns.mdc` | QueryProvider varsayılanları, query key formatı, mutation+invalidation |
-| `scss-modules-conventions.mdc` | SCSS module tercihi, global stil sınırları (bkz. 10.8) |
-| `i18n-translation-usage.mdc` | `t()` zorunluluğu (bkz. 10.9) |
-| `karpathy-guidelines.mdc` | LLM'lerin genel davranış kalıpları: aşırı mühendislik yapmama, cerrahi (minimal) değişiklik, varsayım yerine soru sorma, doğrulanabilir başarı kriteri tanımlama |
-| `js-scss-modules.mdc` | Deprecated — yukarıdaki dört kurala bölündüğü için sadece referans kırılmasın diye tutulan boş yönlendirme dosyası |
+| Dosya                                         | Kapsam                                                                                                                                                                          |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `core-js-formatting.mdc`                    | JS-only zorunluluğu (TS yasak), Prettier hizası (tek tırnak, noktalı virgül)                                                                                               |
+| `imports-aliases-order.mdc`                 | Alias tercihi + import gruplama sırası                                                                                                                                        |
+| `components-registry-vs-direct-imports.mdc` | Registry vs. direkt import ne zaman kullanılır (bkz. 10.3)                                                                                                                    |
+| `react-components-default-export.mdc`       | Function component + default export konvansiyonu                                                                                                                                |
+| `mui-wrapper-components.mdc`                | Ham MUI yerine wrapper zorunluluğu (bkz. 10.8)                                                                                                                                 |
+| `zustand-store-patterns.mdc`                | Selector zorunluluğu, slice pattern,`getState()` kullanımı (bkz. 10.4)                                                                                                     |
+| `react-query-patterns.mdc`                  | QueryProvider varsayılanları, query key formatı, mutation+invalidation                                                                                                       |
+| `scss-modules-conventions.mdc`              | SCSS module tercihi, global stil sınırları (bkz. 10.8)                                                                                                                       |
+| `i18n-translation-usage.mdc`                | `t()` zorunluluğu (bkz. 10.9)                                                                                                                                                |
+| `karpathy-guidelines.mdc`                   | LLM'lerin genel davranış kalıpları: aşırı mühendislik yapmama, cerrahi (minimal) değişiklik, varsayım yerine soru sorma, doğrulanabilir başarı kriteri tanımlama |
+| `js-scss-modules.mdc`                       | Deprecated — yukarıdaki dört kurala bölündüğü için sadece referans kırılmasın diye tutulan boş yönlendirme dosyası                                               |
 
 **Neden proje-özel `CLAUDE.md` yanında ayrı `.mdc` dosyaları var, tek bir dosyada birleştirilmedi**: Cursor editörü glob-bazlı otomatik kural enjeksiyonu yapar (bir dosya açıldığında sadece o dosya tipine uyan `.mdc` kuralları context'e eklenir), Claude Code ise `CLAUDE.md`'yi bütün olarak okur. İki farklı AI aracının farklı yükleme mekanizmaları olduğu için, aynı konvansiyon bilgisi iki paralel formatta tutulur — biri "tamamı her zaman yüklü" (`CLAUDE.md`), diğeri "sadece ilgili dosya tipinde yüklü" (`.mdc` + glob).
 
@@ -427,20 +521,20 @@ Bu, `.wolf/cerebrum.md`'nin (bkz. Bölüm 11) **Cursor editörü için paralel k
 
 ### 11.1 Dosyaların amacı
 
-| Dosya/Klasör | Amaç |
-|---|---|
-| `OPENWOLF.md` | Operasyon protokolü — her oturumda AI'nın uyması gereken kurallar (dosya okumadan önce anatomy kontrolü, kod yazmadan önce cerebrum kontrolü, bug logging eşiği, vb.). Kök `CLAUDE.md`'den `@.wolf/OPENWOLF.md` ile import edilir. |
-| `anatomy.md` | Projedeki her dosya için 2-3 satırlık açıklama + tahmini token maliyeti. AI, bir dosyayı tam okumadan önce buradaki özetin yeterli olup olmadığına bakar — yeterliyse dosyayı hiç okumaz. |
-| `cerebrum.md` | Oturumlar arası öğrenilen kalıcı bilgi: `User Preferences` (kullanıcının tarzı/tercihleri), `Key Learnings` (proje konvansiyonları), `Do-Not-Repeat` (tarihli, geçmiş hatalar), `Decision Log` (mimari kararlar ve gerekçeleri). |
-| `buglog.json` | Yapılandırılmış (JSON) hata/düzeltme geçmişi — her girişte `error_message`, `root_cause`, `fix`, `tags`, `occurrences` alanları. JSON olması, otomatik arama/eşleştirme (bkz. 11.2) ve script'lerle işlenebilirlik için. |
-| `memory.md` | Oturum bazlı, insan-okunur eylem günlüğü (`| saat | eylem | dosya | sonuç | ~token |` tablo formatında). |
-| `config.json` | OpenWolf'un tüm alt-sistemlerinin ayarları: anatomy tarama sıklığı/hariç-tutma pattern'leri, token audit eşikleri, cron ayarları, cerebrum max-token limiti, dashboard/daemon portları, designqc viewport'ları. |
-| `cron-manifest.json` / `cron-state.json` | Zamanlanmış bakım görevleri (örn. `anatomy-rescan` — 6 saatte bir tam anatomy taraması) ve bunların çalışma durumu. |
-| `token-ledger.json` | Oturum başına ve yaşam boyu token kullanım/tasarruf istatistikleri (anatomy hit/miss, tekrar-okuma engelleme sayısı, tahmini tasarruf). |
-| `designqc-report.json` | `openwolf designqc` komutunun ürettiği UI/tasarım denetim raporu. |
-| `reframe-frameworks.md` | UI framework değiştirme/seçme kararları için bilgi tabanı ve karar soruları. |
-| `hooks/` | Claude Code'un tool çağrılarına otomatik müdahale eden çalıştırılabilir script'ler — bkz. 11.2. |
-| `identity.md`, `backups/`, `suggestions.json`, `daemon.log` | Yardımcı/ikincil dosyalar: proje kimliği notu, anatomy/cerebrum'un otomatik yedekleri, AI'nın kendine ürettiği öneriler, arka plan daemon log'u. |
+| Dosya/Klasör                                                       | Amaç                                                                                                                                                                                                                                                |
+| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OPENWOLF.md`                                                     | Operasyon protokolü — her oturumda AI'nın uyması gereken kurallar (dosya okumadan önce anatomy kontrolü, kod yazmadan önce cerebrum kontrolü, bug logging eşiği, vb.). Kök`CLAUDE.md`'den `@.wolf/OPENWOLF.md` ile import edilir.     |
+| `anatomy.md`                                                      | Projedeki her dosya için 2-3 satırlık açıklama + tahmini token maliyeti. AI, bir dosyayı tam okumadan önce buradaki özetin yeterli olup olmadığına bakar — yeterliyse dosyayı hiç okumaz.                                              |
+| `cerebrum.md`                                                     | Oturumlar arası öğrenilen kalıcı bilgi:`User Preferences` (kullanıcının tarzı/tercihleri), `Key Learnings` (proje konvansiyonları), `Do-Not-Repeat` (tarihli, geçmiş hatalar), `Decision Log` (mimari kararlar ve gerekçeleri). |
+| `buglog.json`                                                     | Yapılandırılmış (JSON) hata/düzeltme geçmişi — her girişte`error_message`, `root_cause`, `fix`, `tags`, `occurrences` alanları. JSON olması, otomatik arama/eşleştirme (bkz. 11.2) ve script'lerle işlenebilirlik için.    |
+| `memory.md`                                                       | Oturum bazlı, insan-okunur eylem günlüğü (`                                                                                                                                                                                                     |
+| `config.json`                                                     | OpenWolf'un tüm alt-sistemlerinin ayarları: anatomy tarama sıklığı/hariç-tutma pattern'leri, token audit eşikleri, cron ayarları, cerebrum max-token limiti, dashboard/daemon portları, designqc viewport'ları.                           |
+| `cron-manifest.json` / `cron-state.json`                        | Zamanlanmış bakım görevleri (örn.`anatomy-rescan` — 6 saatte bir tam anatomy taraması) ve bunların çalışma durumu.                                                                                                                      |
+| `token-ledger.json`                                               | Oturum başına ve yaşam boyu token kullanım/tasarruf istatistikleri (anatomy hit/miss, tekrar-okuma engelleme sayısı, tahmini tasarruf).                                                                                                        |
+| `designqc-report.json`                                            | `openwolf designqc` komutunun ürettiği UI/tasarım denetim raporu.                                                                                                                                                                               |
+| `reframe-frameworks.md`                                           | UI framework değiştirme/seçme kararları için bilgi tabanı ve karar soruları.                                                                                                                                                                  |
+| `hooks/`                                                          | Claude Code'un tool çağrılarına otomatik müdahale eden çalıştırılabilir script'ler — bkz. 11.2.                                                                                                                                           |
+| `identity.md`, `backups/`, `suggestions.json`, `daemon.log` | Yardımcı/ikincil dosyalar: proje kimliği notu, anatomy/cerebrum'un otomatik yedekleri, AI'nın kendine ürettiği öneriler, arka plan daemon log'u.                                                                                              |
 
 ### 11.2 Hook mekanizması — `.wolf/`'u pasif değil aktif yapan katman
 
@@ -500,7 +594,8 @@ Bu bölüm, bir AI ajanının (veya senin) bu mimariyi sıfırdan başka bir rep
 7. `test/services/<X>/{unit,integration,e2e}` iskeletini her servis için tekrarla (bkz. 9.1).
 8. Frontend için Bölüm 10'daki dizin yapısını ve konvansiyonları uygula; alt-projeye özel bir `CLAUDE.md` yaz.
 9. `docker-compose.e2e.yml` ile tüm servisleri + DB + Redis'i tek komutla ayağa kaldıran bir e2e orkestrasyonu kur.
-10. `.wolf/` klasörünü ve `.claude/settings.json` hook bloğunu taşı (bkz. 11.3), `config.json`'daki `exclude_patterns`'i projeye göre güncelle, boş `anatomy.md`/`cerebrum.md`/`buglog.json`/`memory.md` ile başlat.
+10. Dağıtım otomasyonu için kök `scripts/deploy.sh` ve servis bazlı `services/*/deploy.sh` script'lerini kur, `chmod +x` yetkisi ver (bkz. Bölüm 7.1).
+11. `.wolf/` klasörünü ve `.claude/settings.json` hook bloğunu taşı (bkz. 11.3), `config.json`'daki `exclude_patterns`'i projeye göre güncelle, boş `anatomy.md`/`cerebrum.md`/`buglog.json`/`memory.md` ile başlat.
 
 ### 12.2 Tek-servisli sadeleştirilmiş varyant
 

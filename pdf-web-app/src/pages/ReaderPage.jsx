@@ -54,7 +54,13 @@ const ReaderPage = () => {
         <h1>{document.originalName}</h1>
       </header>
 
-      {document.status === 'processing' && <p>Belge işleniyor, lütfen bekleyin…</p>}
+      {document.status === 'processing' && (
+        <p>
+          {document.progress?.pageCount
+            ? `Belge işleniyor: ${document.progress.pagesDone}/${document.progress.pageCount} sayfa…`
+            : 'Belge işleniyor, lütfen bekleyin…'}
+        </p>
+      )}
       {document.status === 'failed' && (
         <p className="form-error">Bu belge işlenemedi: {document.errorMessage}</p>
       )}

@@ -7,6 +7,10 @@ export const useDocumentsList = () =>
     queryKey: queryKeys.documents,
     queryFn: listDocumentsRequest,
     select: (data) => data.documents,
+    // Poll while any document is still processing so the list's progress ("İşleniyor… 12/50")
+    // and status badge update live, the same way the reader page already does per-document.
+    refetchInterval: (query) =>
+      query.state.data?.documents?.some((doc) => doc.status === 'processing') ? 1500 : false,
   });
 
 export const useDocument = (documentId, options = {}) =>

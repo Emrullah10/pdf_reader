@@ -12,10 +12,15 @@ const toPublicDocument = (doc) => ({
   errorMessage: doc.errorMessage,
   createdAt: doc.createdAt,
   storagePath: doc.storagePath,
+  // null until a document_jobs row exists (queued) or once processing has finished; while
+  // 'processing' it's { pagesDone, pageCount }, letting the client show a percentage once
+  // pageCount is known and an indeterminate state before that.
+  progress: doc.progress ?? null,
 });
 
 export const makeDocumentController = ({
   uploadDocument,
+  enqueueDocumentProcessing,
   getDocument,
   listDocuments,
   searchDocuments,
@@ -24,11 +29,13 @@ export const makeDocumentController = ({
   uploadSessionStore,
   maxUploadBytes,
 }) => {
-  // Registers the document and kicks off extraction without waiting for it. Parsing a large PDF
-  // outlasts any proxy's patience (Cloudflare cuts at 100s), so the response has to go out first;
-  // the document is readable at status 'processing' and flips to 'ready'/'failed' on its own.
+  // Registers the document and enqueues extraction on the persistent job queue rather than running
+  // it in this process. Parsing a large PDF outlasts any proxy's patience (Cloudflare cuts at
+  // 100s) and is CPU-bound enough to starve the API's event loop, so a separate worker process
+  // picks the job up; the document is readable at status 'processing' and flips to
+  // 'ready'/'failed' once the worker finishes it.
   const respondAndProcess = async (res, { userId, originalName, mime, sizeBytes, storagePath }) => {
-    const { document, startProcessing } = await uploadDocument({
+    const { document } = await uploadDocument({
       userId,
       originalName,
       mime,
@@ -36,13 +43,9 @@ export const makeDocumentController = ({
       storagePath,
     });
 
-    res.status(201).json({ document: toPublicDocument(document) });
+    await enqueueDocumentProcessing({ documentId: document.id });
 
-    startProcessing().catch((err) => {
-      // startProcessing already records the failure on the document row; this guard only stops an
-      // unhandled rejection from taking the process down after the response has been sent.
-      console.error(`[document] background extraction failed for ${document.id}:`, err);
-    });
+    res.status(201).json({ document: toPublicDocument(document) });
   };
 
   return {

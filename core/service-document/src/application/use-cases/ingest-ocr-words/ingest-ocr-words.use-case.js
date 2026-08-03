@@ -16,7 +16,7 @@ export const makeIngestOcrWords = ({ documentRepo, pageRepo, wordRepo, normalize
     }
 
     await wordRepo.createMany(
-      page.id,
+      words.map(() => page.id),
       words.map((w) => ({
         text: w.text,
         textNormalized: normalize(w.text),

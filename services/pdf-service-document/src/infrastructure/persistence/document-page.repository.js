@@ -1,11 +1,3 @@
-// KNOWN GAP: writes here are not wrapped in a transaction with the parent document's
-// status update. If a later page's write fails mid-upload, earlier pages' rows can be
-// left orphaned under a document marked status='failed'. See core/service-document's
-// upload-document.use-case.js for the calling context. Fixing this requires either a
-// transaction-aware repository wrapper injected into the use-case layer, or a cleanup
-// step (DELETE FROM document_pages WHERE document_id = ...) in the use-case's catch
-// block — deferred as a follow-up, not blocking for this phase.
-
 const rowToPage = (row) => ({
   id: row.id,
   documentId: row.document_id,
@@ -15,18 +7,25 @@ const rowToPage = (row) => ({
 });
 
 export const makeDocumentPageRepository = ({ pool }) => ({
-  async createMany(documentId, pages) {
-    const created = [];
-    for (const page of pages) {
-      const { rows } = await pool.query(
-        `INSERT INTO document_pages (document_id, page_no, width, height)
-         VALUES ($1, $2, $3, $4)
-         RETURNING *`,
-        [documentId, page.pageNo, page.width, page.height],
-      );
-      created.push(rowToPage(rows[0]));
-    }
-    return created;
+  // Inserts every page in a batch with a single round trip via UNNEST, instead of one INSERT per
+  // page. Accepts an optional `client` (e.g. from withTransaction) so the caller can batch page and
+  // word writes for the same pages atomically.
+  async createMany(documentId, pages, { client } = {}) {
+    if (pages.length === 0) return [];
+    const runner = client ?? pool;
+
+    const { rows } = await runner.query(
+      `INSERT INTO document_pages (document_id, page_no, width, height)
+       SELECT * FROM UNNEST($1::uuid[], $2::int[], $3::numeric[], $4::numeric[])
+       RETURNING *`,
+      [
+        pages.map(() => documentId),
+        pages.map((p) => p.pageNo),
+        pages.map((p) => p.width),
+        pages.map((p) => p.height),
+      ],
+    );
+    return rows.map(rowToPage);
   },
 
   async listByDocument(documentId) {

@@ -23,7 +23,7 @@ describe('page-word.repository (integration)', () => {
     const doc = await documentRepo.create({ userId, originalName: 'a.pdf', mime: 'application/pdf', sizeBytes: 100, storagePath: '/tmp/a.pdf' });
     const [page] = await pageRepo.createMany(doc.id, [{ pageNo: 1, width: 612, height: 792 }]);
 
-    await wordRepo.createMany(page.id, [
+    await wordRepo.createMany([page.id, page.id], [
       { text: 'Hello', textNormalized: 'hello', x: 1, y: 1, w: 5, h: 5, wordIndex: 0 },
       { text: 'World', textNormalized: 'world', x: 2, y: 2, w: 5, h: 5, wordIndex: 1 },
     ]);
@@ -42,8 +42,8 @@ describe('page-word.repository (integration)', () => {
     const [page1] = await pageRepo.createMany(doc1.id, [{ pageNo: 1, width: 612, height: 792 }]);
     const [page2] = await pageRepo.createMany(doc2.id, [{ pageNo: 1, width: 612, height: 792 }]);
 
-    await wordRepo.createMany(page1.id, [{ text: 'shared', textNormalized: 'shared', x: 1, y: 1, w: 5, h: 5, wordIndex: 0 }]);
-    await wordRepo.createMany(page2.id, [{ text: 'shared', textNormalized: 'shared', x: 1, y: 1, w: 5, h: 5, wordIndex: 0 }]);
+    await wordRepo.createMany([page1.id], [{ text: 'shared', textNormalized: 'shared', x: 1, y: 1, w: 5, h: 5, wordIndex: 0 }]);
+    await wordRepo.createMany([page2.id], [{ text: 'shared', textNormalized: 'shared', x: 1, y: 1, w: 5, h: 5, wordIndex: 0 }]);
 
     const results = await wordRepo.searchByUser(userId, { normalizedQuery: 'shared', documentIds: [doc1.id] });
 
@@ -55,7 +55,7 @@ describe('page-word.repository (integration)', () => {
     const otherUserId = await seedUser(pool, { email: `other-${Date.now()}@test.com` });
     const doc = await documentRepo.create({ userId: otherUserId, originalName: 'a.pdf', mime: 'application/pdf', sizeBytes: 100, storagePath: '/tmp/a.pdf' });
     const [page] = await pageRepo.createMany(doc.id, [{ pageNo: 1, width: 612, height: 792 }]);
-    await wordRepo.createMany(page.id, [{ text: 'secret', textNormalized: 'secret', x: 1, y: 1, w: 5, h: 5, wordIndex: 0 }]);
+    await wordRepo.createMany([page.id], [{ text: 'secret', textNormalized: 'secret', x: 1, y: 1, w: 5, h: 5, wordIndex: 0 }]);
 
     const results = await wordRepo.searchByUser(userId, { normalizedQuery: 'secret', documentIds: [] });
 

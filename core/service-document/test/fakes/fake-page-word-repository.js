@@ -19,8 +19,8 @@ export const makeFakeWordRepository = (initialWords = []) => {
   const words = [...initialWords];
 
   return {
-    async createMany(pageId, wordInputs) {
-      const created = wordInputs.map((w) => ({ pageId, ...w }));
+    async createMany(pageIds, wordInputs) {
+      const created = wordInputs.map((w, i) => ({ pageId: pageIds[i], ...w }));
       words.push(...created);
       return created;
     },

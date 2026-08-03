@@ -1,5 +1,12 @@
 import { getDocument, OPS } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { pathToFileURL } from 'node:url';
+import { dirname, join } from 'node:path';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const standardFontDataUrl = pathToFileURL(
+  join(dirname(require.resolve('pdfjs-dist/package.json')), 'standard_fonts') + '/',
+).href;
 
 // pdf.js exposes per-glyph advance widths (in 1/1000 em) only through the operator list, not through
 // getTextContent(). Collect them per drawn string so word boxes can be measured with the font's real
@@ -30,18 +37,25 @@ const buildGlyphWidthIndex = (operatorList) => {
   return index;
 };
 
-// Widths of the characters of `str` in em/1000, aligned index-for-index with the string. Falls back
-// to a flat distribution when the item's text can't be matched back to a drawn string.
+// Widths of the characters of `str` in em/1000, aligned index-for-index with the string. Only an
+// exact match is used — the fallback used to also scan the whole index with `indexOf` per miss,
+// which is O(index size) per text item; on text-heavy pages the flat-distribution fallback below
+// is indistinguishable in practice, so a miss just takes that path instead of paying for the scan.
 const glyphWidthsFor = (str, glyphWidthIndex) => {
   const exact = glyphWidthIndex.get(str);
-  if (exact && exact.length === str.length) return exact;
+  return exact && exact.length === str.length ? exact : null;
+};
 
-  for (const [drawn, widths] of glyphWidthIndex) {
-    const at = drawn.indexOf(str);
-    if (at !== -1 && widths.length === drawn.length) return widths.slice(at, at + str.length);
+// True if any item in the page has more than one whitespace-separated piece — i.e. needs its
+// width split proportionally, which is the only reason the (expensive) glyph index is ever needed.
+const pageNeedsGlyphWidths = (textContent) => {
+  for (const item of textContent.items) {
+    if (item.str.trim().length === 0) continue;
+    const pieces = item.str.match(/\S+/g);
+    if (pieces && pieces.length > 1) return true;
+    if (pieces && pieces[0].length !== item.str.length) return true;
   }
-
-  return null;
+  return false;
 };
 
 const groupTextItemsIntoWords = (textContent, pageHeight, glyphWidthIndex) => {
@@ -58,6 +72,11 @@ const groupTextItemsIntoWords = (textContent, pageHeight, glyphWidthIndex) => {
     const itemHeight = item.height || Math.abs(item.transform[3]) || 10;
     const itemWidth = item.width || item.str.length * (itemHeight * 0.5);
 
+    // A single run with no internal whitespace is exactly one word — its box is the item's own
+    // box, so there's nothing to distribute proportionally and no need for glyph metrics at all.
+    const pieces = [...item.str.matchAll(/\S+/g)];
+    const isSingleWord = pieces.length === 1 && pieces[0][0].length === item.str.length;
+
     // pdf.js gives one text item per run of text (often a whole line or phrase, not one item per word),
     // so each word's box has to be carved out of the item's own bounding box.
     //
@@ -66,19 +85,38 @@ const groupTextItemsIntoWords = (textContent, pageHeight, glyphWidthIndex) => {
     // under-covers wide words and drifts on every word after the first. Instead, distribute itemWidth
     // across the characters in proportion to their real glyph advances, which keeps the total exactly
     // equal to itemWidth (so the item's right edge still lands where pdf.js says it does) while giving
-    // each character its true share.
-    const glyphWidths = glyphWidthsFor(item.str, glyphWidthIndex);
+    // each character its true share. glyphWidthIndex is null on pages where nothing needed it (see
+    // pageNeedsGlyphWidths), which skips getOperatorList() — the most expensive step — entirely.
+    const glyphWidths = isSingleWord || !glyphWidthIndex ? null : glyphWidthsFor(item.str, glyphWidthIndex);
     const totalGlyphWidth = glyphWidths?.reduce((sum, w) => sum + w, 0) ?? 0;
+
+    // Prefix sums of glyph widths, so offsetAt(i) is O(1) instead of re-summing from 0 each call.
+    let prefixSums = null;
+    if (glyphWidths && totalGlyphWidth > 0) {
+      prefixSums = new Array(glyphWidths.length + 1);
+      prefixSums[0] = 0;
+      for (let n = 0; n < glyphWidths.length; n++) prefixSums[n + 1] = prefixSums[n] + glyphWidths[n];
+    }
 
     // Offset of character `i` from the item's left edge, and the width spanned by [start, end).
     const offsetAt = (i) => {
-      if (!glyphWidths || totalGlyphWidth <= 0) return (itemWidth * i) / (item.str.length || 1);
-      let acc = 0;
-      for (let n = 0; n < i; n++) acc += glyphWidths[n];
-      return (itemWidth * acc) / totalGlyphWidth;
+      if (!prefixSums) return (itemWidth * i) / (item.str.length || 1);
+      return (itemWidth * prefixSums[i]) / totalGlyphWidth;
     };
 
-    for (const match of item.str.matchAll(/\S+/g)) {
+    if (isSingleWord) {
+      words.push({
+        text: pieces[0][0],
+        x: e,
+        y: pageHeight - f - itemHeight,
+        w: itemWidth,
+        h: itemHeight,
+        wordIndex: wordIndex++,
+      });
+      continue;
+    }
+
+    for (const match of pieces) {
       const piece = match[0];
       const pieceStart = match.index;
       const pieceOffset = offsetAt(pieceStart);
@@ -104,7 +142,19 @@ const groupTextItemsIntoWords = (textContent, pageHeight, glyphWidthIndex) => {
 // Opens by path rather than by buffer: passing `data` forces the whole PDF into memory, which on a
 // small host is what actually kills the process on a large file. In url mode pdf.js reads ranges
 // off disk as it needs them, so peak memory tracks the working set, not the file size.
-const openPdf = (storagePath) => getDocument({ url: pathToFileURL(storagePath) }).promise;
+//
+// disableFontFace/useSystemFonts are meaningless in Node (there's no font face to render), and
+// isEvalSupported: false skips JS-eval-based glyph-mapping optimizations pdf.js otherwise attempts —
+// all pure overhead here. standardFontDataUrl points at the package's own font metrics so pdf.js
+// doesn't need to fetch them or warn about their absence.
+const openPdf = (storagePath) =>
+  getDocument({
+    url: pathToFileURL(storagePath),
+    disableFontFace: true,
+    isEvalSupported: false,
+    useSystemFonts: false,
+    standardFontDataUrl,
+  }).promise;
 
 // Streams a document page by page, handing each one to `onPage` and releasing it before moving on.
 // Nothing accumulates across pages here — the caller decides what to keep — so a 200MB scan costs
@@ -119,11 +169,17 @@ export const extractPdfTextByPage = async (storagePath, onPage) => {
 
       try {
         const viewport = page.getViewport({ scale: 1 });
-        const words = groupTextItemsIntoWords(
-          await page.getTextContent(),
-          viewport.height,
-          buildGlyphWidthIndex(await page.getOperatorList()),
-        );
+        const textContent = await page.getTextContent();
+
+        // getOperatorList() re-walks the whole content stream and is the single most expensive step
+        // in this loop — far more than getTextContent() alone. It's only needed to split a multi-word
+        // text item proportionally by real glyph advances, so pages made up entirely of single-word
+        // items (common once whitespace already separates runs) skip it completely.
+        const glyphWidthIndex = pageNeedsGlyphWidths(textContent)
+          ? buildGlyphWidthIndex(await page.getOperatorList())
+          : null;
+
+        const words = groupTextItemsIntoWords(textContent, viewport.height, glyphWidthIndex);
         if (words.length > 0) anyWords = true;
 
         await onPage({ pageNo, width: viewport.width, height: viewport.height, words });

@@ -1,33 +1,17 @@
-// KNOWN GAP: writes here are not wrapped in a transaction with the parent document's
-// status update. If a later page's write fails mid-upload, earlier pages' rows can be
-// left orphaned under a document marked status='failed'. See core/service-document's
-// upload-document.use-case.js for the calling context. Fixing this requires either a
-// transaction-aware repository wrapper injected into the use-case layer, or a cleanup
-// step (DELETE FROM document_pages WHERE document_id = ...) in the use-case's catch
-// block — deferred as a follow-up, not blocking for this phase.
-
-const rowToWord = (row) => ({
-  id: row.id,
-  pageId: row.page_id,
-  text: row.text,
-  textNormalized: row.text_normalized,
-  x: Number(row.x),
-  y: Number(row.y),
-  w: Number(row.w),
-  h: Number(row.h),
-  wordIndex: row.word_index,
-});
-
 export const makePageWordRepository = ({ pool }) => ({
-  async createMany(pageId, words) {
-    if (words.length === 0) return [];
+  // Accepts words for one or more pages in a single batch: `pageIds` is parallel to `words`,
+  // giving each word's page_id (rather than one call per page). No RETURNING — callers never use
+  // the inserted rows, and shipping thousands of them back over the wire on every flush was pure
+  // waste. Accepts an optional `client` for use inside withTransaction.
+  async createMany(pageIds, words, { client } = {}) {
+    if (words.length === 0) return;
+    const runner = client ?? pool;
 
-    const { rows } = await pool.query(
+    await runner.query(
       `INSERT INTO page_words (page_id, text, text_normalized, x, y, w, h, word_index)
-       SELECT * FROM UNNEST($1::uuid[], $2::text[], $3::text[], $4::numeric[], $5::numeric[], $6::numeric[], $7::numeric[], $8::int[])
-       RETURNING *`,
+       SELECT * FROM UNNEST($1::uuid[], $2::text[], $3::text[], $4::numeric[], $5::numeric[], $6::numeric[], $7::numeric[], $8::int[])`,
       [
-        words.map(() => pageId),
+        pageIds,
         words.map((w) => w.text),
         words.map((w) => w.textNormalized),
         words.map((w) => w.x),
@@ -37,7 +21,6 @@ export const makePageWordRepository = ({ pool }) => ({
         words.map((w) => w.wordIndex),
       ],
     );
-    return rows.map(rowToWord);
   },
 
   async searchByUser(userId, { normalizedQuery, documentIds = [] }) {

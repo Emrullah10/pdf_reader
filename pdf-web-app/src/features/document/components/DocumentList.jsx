@@ -35,7 +35,9 @@ const DocumentList = () => {
           <Link to={buildReaderPath(doc.id)}>
             <span className="document-list__name">{doc.originalName}</span>
             <span className={`document-list__status document-list__status--${doc.status}`}>
-              {STATUS_LABELS[doc.status] ?? doc.status}
+              {doc.status === 'processing' && doc.progress?.pageCount
+                ? `İşleniyor… ${doc.progress.pagesDone}/${doc.progress.pageCount}`
+                : (STATUS_LABELS[doc.status] ?? doc.status)}
             </span>
             {doc.status === 'ready' && doc.hasTextLayer === false && (
               <span className="document-list__badge">Taranmış — OCR gerekli</span>
