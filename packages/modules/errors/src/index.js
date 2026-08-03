@@ -36,5 +36,8 @@ export const handleErrors = (err, _req, res, _next) => {
     res.status(err.status).json({ error: { message: err.message, details: err.details ?? null } });
     return;
   }
+  // An unexpected error is the only kind we cannot explain from the response alone, so it is the
+  // one that must reach the logs — otherwise a 500 leaves no trace anywhere to debug from.
+  console.error('[handleErrors] Unhandled error:', err);
   res.status(500).json({ error: { message: 'Internal server error', details: null } });
 };
